@@ -93,7 +93,7 @@ MIT License
 
 ## Автор
 
-[arti]
+arti
 
 ## Благодарности
 
