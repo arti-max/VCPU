@@ -3,12 +3,23 @@ from instructions import *
 from loader import loader
 from ram import ram
 from display import Display
+from cassette import CassetteManager
+from tkinter import filedialog
+import tkinter as tk
+
+root = tk.Tk()
+root.withdraw()  # Скрываем основное окно tkinter
 
 class VCPU:
 	def __init__(self, ram, loader, screen):
 		self.ram = ram
 		self.loader = loader
-		self.regs = {0x01: 0x00, 0x02: 0x00, 0x03: 0x00, 0x04: 0x00, 0x05: 0x00, 0x06: 0x00}
+		self.regs ={0x01: 0x00, 
+					0x02: 0x00,
+					0x03: 0x00, 
+					0x04: 0x00, 
+					0x05: 0x00, 
+					0x06: 0x00}
 		self.flags = {0x01: 0x0}
 		self.ip = 0x0000
 		self.bits = 0x08
@@ -17,6 +28,7 @@ class VCPU:
 		self.powered = False
 		self.display.set_power(False)
 		self.key_save_addr = None  # адрес для сохранения нажатий
+		self.cassette = CassetteManager()
 
 	def run(self):
 		clock = pygame.time.Clock()
@@ -27,16 +39,36 @@ class VCPU:
 				if event.type == pygame.QUIT:
 					self.running = False
 				elif event.type == pygame.MOUSEBUTTONDOWN:
+					# Проверяем клик по кнопкам кассеты
+					if self.display.inject_button.collidepoint(event.pos):
+						# Открываем диалог выбора файла через tkinter
+						filename = filedialog.askopenfilename(
+							defaultextension=".cas",
+							filetypes=[("Cassette files", "*.cas"), ("All files", "*.*")]
+						)
+						if filename:
+							if self.cassette.insert_cassette(filename):
+								self.display.cassette_inserted = True
+					
+					elif self.display.eject_button.collidepoint(event.pos):
+						self.cassette.eject_cassette()
+						self.display.cassette_inserted = False
+
 					# Проверяем клик по кнопке питания
 					if self.display.power_button.collidepoint(event.pos):
 						self.powered = not self.powered
 						self.display.set_power(self.powered)
 						if self.powered:
 							self.ip = 0  # Сброс IP при включении
-							self.regs = {0x01: 0x00, 0x02: 0x00, 0x03: 0x00, 0x04: 0x00}
+							self.regs = {0x01: 0x00, 0x02: 0x00, 0x03: 0x00, 
+									0x04: 0x00, 0x05: 0x00, 0x06: 0x00}
 							self.flags = {0x01: 0x0}
+							# Перезагружаем программу из boot.bin
+							self.loader.load()
 						else:
-							self.display.clear_display()  # Очищаем дисплеи при выключении
+							# Очищаем всю память при выключении
+							self.ram.memory = bytearray(self.ram.size)
+							self.display.clear_display()
 				elif event.type == pygame.KEYDOWN:
 					# Маппинг клавиш клавиатуры на новые индексы
 					key_mapping = {
@@ -75,7 +107,7 @@ class VCPU:
 			key = self.display.get_pressed_key()
 			if key and self.key_save_addr:
 				bank, addr = self.key_save_addr
-				real_addr = self.ram.bank_addresses[bank] + self.ram.data_addr + addr
+				real_addr = self.ram.bank_addresses[bank] + addr
 				self.ram.memory[real_addr] = key
 
 			# Выполнение инструкций только если процессор включен
@@ -153,8 +185,18 @@ class VCPU:
 					savkey(self)
 				elif (instruction == 0x1E): # BRIGHT
 					bright(self)
+				elif (instruction == 0x1F): # LOADRR
+					loadrr(self)
 				elif (instruction == 0xFF): # HLT
 					hlt(self)
+				elif (instruction == 0x20): # CREAD
+					cread(self)
+				elif (instruction == 0x21): # CWRITE
+					cwrite(self)
+				elif (instruction == 0x22): # CSTAT
+					cstat(self)
+				elif (instruction == 0x23): # CINFO
+					cinfo(self)
 				else:
 					print("Неизвестная инструкция:", hex(instruction))
 
@@ -164,6 +206,7 @@ class VCPU:
 			self.display.draw_pixel_display(50, 50)
 			self.display.draw_text(350, 50)
 			self.display.draw_keyboard(50, 350)
+			self.display.draw_cassette_interface(350, 120)  # Новые координаты
 			pygame.display.flip()
 			
 			clock.tick(120)
@@ -174,7 +217,7 @@ screen = pygame.display.set_mode((800, 500))
 pygame.display.set_caption("VCPU Display")
 
 # Инициализация VCPU с 512 байтами памяти (2 банка)
-ram = ram(1024)
+ram = ram(2048) # BANK 0 - 7
 loader = loader(ram)
 loader.load()
 vcpu = VCPU(ram, loader, screen)

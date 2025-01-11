@@ -34,7 +34,7 @@ def add(cpu):  # ADD REG1 REG2 [result to REG1]
 	reg2 = cpu.ram.memory[cpu.ip]
 	cpu.ip += 1
 
-	# Проверяем существование регистров
+
 	if reg1 not in cpu.regs or reg2 not in cpu.regs:
 		raise ValueError(f"Неверный номер регистра: R{reg1} или R{reg2}")
 
@@ -48,7 +48,6 @@ def sub(cpu): # SUB REG1 REG2 [result to REG1]
 	reg2 = cpu.ram.memory[cpu.ip]
 	cpu.ip += 1
 
-	# Проверяем существование регистров
 	if reg1 not in cpu.regs or reg2 not in cpu.regs:
 		raise ValueError(f"Неверный номер регистра: R{reg1} или R{reg2}")
 
@@ -90,8 +89,9 @@ def loadr(cpu): # LOADR REG ADDR
 	cpu.ip += 1
 
 	# Для данных используем вторую половину текущего банка
-	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + cpu.ram.data_addr + addr
+	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr
 	cpu.regs[reg] = cpu.ram.memory[real_addr]
+
 
 def storev(cpu): # STOREV ADDR VAL
 	addr = cpu.ram.memory[cpu.ip]
@@ -100,7 +100,7 @@ def storev(cpu): # STOREV ADDR VAL
 	cpu.ip += 1
 	
 	# Для данных используем вторую половину текущего банка
-	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + cpu.ram.data_addr + addr
+	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr
 	cpu.ram.memory[real_addr] = val
 
 def storer(cpu): # STORER ADDR REG
@@ -110,7 +110,7 @@ def storer(cpu): # STORER ADDR REG
 	cpu.ip += 1
 
 	# Для данных используем вторую половину текущего банка
-	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + cpu.ram.data_addr + addr
+	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr
 	cpu.ram.memory[real_addr] = cpu.regs[reg]
 
 def storem(cpu): # STOREM ADDR1 ADDR2
@@ -120,8 +120,8 @@ def storem(cpu): # STOREM ADDR1 ADDR2
 	cpu.ip += 1
 
 	# Для данных используем вторую половину текущего банка
-	real_addr1 = cpu.ram.bank_addresses[cpu.ram.current_bank] + cpu.ram.data_addr + addr1
-	real_addr2 = cpu.ram.bank_addresses[cpu.ram.current_bank] + cpu.ram.data_addr + addr2
+	real_addr1 = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr1
+	real_addr2 = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr2
 	cpu.ram.memory[real_addr1] = cpu.ram.memory[real_addr2]
 
 
@@ -168,6 +168,7 @@ def je(cpu): # JE ADDR
 def jne(cpu): # JNE ADDR
 	addr = cpu.ram.memory[cpu.ip]
 	cpu.ip += 1
+
 	if cpu.flags[0x01] == 1:  # Если флаг равен 1
 		real_addr = cpu.ram.get_real_address(addr)
 		#print("JNE: ",real_addr)
@@ -234,9 +235,8 @@ def setpx(cpu): # SETPX REG1 REG2 [REG3] - установить пиксель (
 	cpu.ip += 1
 	y_reg = cpu.ram.memory[cpu.ip]
 	cpu.ip += 1
-	brightness_reg = cpu.ram.memory[cpu.ip] if cpu.ip < cpu.ram.size else None
-	if brightness_reg:
-		cpu.ip += 1
+	brightness_reg = cpu.ram.memory[cpu.ip]
+	cpu.ip +=1
 	
 	if x_reg not in cpu.regs or y_reg not in cpu.regs:
 		raise ValueError(f"Неверный номер регистра: R{x_reg} или R{y_reg}")
@@ -347,3 +347,89 @@ def bright(cpu): # BRIGHT REG - устанавливает яркость из �
 		
 	# Устанавливаем яркость из значения в регистре
 	cpu.display.set_brightness(cpu.regs[reg])
+
+def loadrr(cpu): # LOADRR REG1 REG2 (загрузка в REG1 из адреса в REG2)
+	reg1 = cpu.ram.memory[cpu.ip]
+	cpu.ip += 1
+	reg2 = cpu.ram.memory[cpu.ip]
+	cpu.ip += 1
+	
+	if reg1 not in cpu.regs or reg2 not in cpu.regs:
+		raise ValueError(f"Неверный номер регистра: R{reg1} или R{reg2}")
+		
+	addr = cpu.regs[reg2]  # Берем адрес из второго регистра
+	real_addr = cpu.ram.bank_addresses[cpu.ram.current_bank] + addr
+	value = cpu.ram.memory[real_addr]  # Загружаем значение по этому адресу
+	cpu.regs[reg1] = value  # Сохраняем в первый регистр
+
+def cread(cpu): # CREAD REG1 REG2 (загрузка секции REG2 в память начиная с адреса REG1)
+    addr_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    section_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    
+    if addr_reg not in cpu.regs or section_reg not in cpu.regs:
+        raise ValueError(f"Неверный номер регистра: R{addr_reg} или R{section_reg}")
+    
+    # Проверяем наличие кассеты
+    if not cpu.cassette.is_inserted:
+        return
+        
+    # Читаем секцию
+    section_data = cpu.cassette.read_section(cpu.regs[section_reg])
+    if section_data is None:
+        return
+        
+    # Записываем данные в память
+    start_addr = cpu.ram.get_real_address(cpu.regs[addr_reg])
+    for i, byte in enumerate(section_data):
+        cpu.ram.memory[start_addr + i] = byte
+
+def cwrite(cpu): # CWRITE REG1 REG2 (запись в секцию REG2 из памяти начиная с адреса REG1)
+    addr_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    section_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    
+    if addr_reg not in cpu.regs or section_reg not in cpu.regs:
+        raise ValueError(f"Неверный номер регистра: R{addr_reg} или R{section_reg}")
+    
+    # Проверяем наличие кассеты
+    if not cpu.cassette.is_inserted:
+        return
+        
+    # Собираем данные из памяти
+    start_addr = cpu.ram.get_real_address(cpu.regs[addr_reg])
+    data = bytearray(cpu.ram.memory[start_addr:start_addr + 256])
+    
+    # Записываем в кассету
+    cpu.cassette.write_section(cpu.regs[section_reg], data)
+
+def cstat(cpu): # CSTAT REG (записать статус кассеты в регистр)
+    reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    
+    if reg not in cpu.regs:
+        raise ValueError(f"Неверный номер регистра: R{reg}")
+    
+    # Записываем статус (0 - нет кассеты, 1 - есть кассета)
+    cpu.regs[reg] = 0x01 if cpu.cassette.is_inserted else 0x00
+
+def cinfo(cpu): # CINFO REG1 REG2 (REG1 - тип информации, результат в REG2)
+    type_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    result_reg = cpu.ram.memory[cpu.ip]
+    cpu.ip += 1
+    
+    if type_reg not in cpu.regs or result_reg not in cpu.regs:
+        raise ValueError(f"Неверный номер регистра: R{type_reg} или R{result_reg}")
+    
+    # Тип информации:
+    # 0 - количество секций
+    # 1 - максимальный размер
+    info_type = cpu.regs[type_reg]
+    
+    if info_type == 0x00:
+        cpu.regs[result_reg] = cpu.cassette.get_sections_count()
+    elif info_type == 0x01:
+        cpu.regs[result_reg] = cpu.cassette.get_max_size()

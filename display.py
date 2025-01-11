@@ -96,6 +96,14 @@ class Display:
 
         self.default_brightness = 255  # Яркость по умолчанию
 
+        # Добавляем элементы для кассеты
+        self.cassette_slot = pygame.Rect(350, 120, 200, 30)  # Шире и под сегментным дисплеем
+        self.inject_button = pygame.Rect(350, 160, 95, 30)   # Кнопка INJECT слева
+        self.eject_button = pygame.Rect(455, 160, 95, 30)    # Кнопка EJECT справа
+        
+        self.cassette_inserted = False
+        self.current_cassette = None
+
     def set_brightness(self, value):
         """Установить яркость (0-255)"""
         self.brightness = max(0, min(255, value))
@@ -122,17 +130,24 @@ class Display:
                          self.display_size * self.pixel_size + 4,
                          self.display_size * self.pixel_size + 4), 2)
         
-        # Выбираем палитру в зависимости от состояния питания
-        colors = self.colors if self.powered else self.colors_off
+        # Минимальная яркость для включенных пикселей
+        min_brightness = 32
         
         # Рисуем пиксели
         for py in range(self.display_size):
             for px in range(self.display_size):
                 pixel_info = self.pixel_data.get((px, py), (False, 0))
                 if pixel_info[0]:  # Если пиксель включен
-                    color = (0, pixel_info[1], 0) if self.powered else self.colors_off["on"]
+                    if self.powered:
+                        # Применяем минимальную яркость
+                        brightness = pixel_info[1]
+                        actual_brightness = min_brightness + (brightness * (255 - min_brightness) // 255)
+                        color = (0, actual_brightness, 0)
+                    else:
+                        color = self.colors_off["on"]
                 else:
-                    color = self.colors["off"]
+                    color = self.colors["off"]  # Цвет выключенного пикселя всегда темно-зеленый
+                    
                 pygame.draw.rect(self.surface, color,
                                (x + px * self.pixel_size,
                                 y + py * self.pixel_size,
@@ -301,3 +316,39 @@ class Display:
         self.powered = state
         if not state:  # Если выключаем
             self.clear_display()  # Очищаем все дисплеи 
+
+    def draw_pixel(self, x, y, brightness=255):
+        # Минимальная яркость 32 (темно-зеленый), максимальная 255
+        min_brightness = 32
+        actual_brightness = min_brightness + (brightness * (255 - min_brightness) // 255)
+        color = (0, actual_brightness, 0)
+        
+        # Вычисляем размер и позицию пикселя
+        pixel_size = self.pixel_size
+        pixel_x = x * pixel_size
+        pixel_y = y * pixel_size
+        
+        # Рисуем пиксель
+        pygame.draw.rect(self.surface, color, (pixel_x, pixel_y, pixel_size, pixel_size)) 
+
+    def draw_cassette_interface(self, x, y):
+        """Отрисовка интерфейса кассеты"""
+        # Рисуем разъем
+        color = (0, 255, 0) if self.cassette_inserted else (32, 32, 32)
+        pygame.draw.rect(self.surface, (100, 100, 100), 
+                        (x-2, y-2, 204, 34), 2)  # Рамка разъема
+        pygame.draw.rect(self.surface, color, self.cassette_slot)
+        
+        # Рисуем кнопки
+        pygame.draw.rect(self.surface, (60, 60, 60), self.inject_button)
+        pygame.draw.rect(self.surface, (60, 60, 60), self.eject_button)
+        
+        # Надписи на кнопках
+        font = pygame.font.Font(None, 24)  # Увеличим шрифт
+        inject_text = font.render("INJECT", True, (0, 255, 0))
+        eject_text = font.render("EJECT", True, (0, 255, 0))
+        
+        self.surface.blit(inject_text, (self.inject_button.centerx - 30, 
+                                       self.inject_button.centery - 8))
+        self.surface.blit(eject_text, (self.eject_button.centerx - 25, 
+                                      self.eject_button.centery - 8)) 
